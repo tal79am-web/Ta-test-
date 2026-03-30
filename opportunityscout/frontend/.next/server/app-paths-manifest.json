@@ -1,7 +1,0 @@
-{
-  "/api/opportunities/route": "app/api/opportunities/route.js",
-  "/opportunities/page": "app/opportunities/page.js",
-  "/trends/page": "app/trends/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
-  "/sources/page": "app/sources/page.js"
-}
