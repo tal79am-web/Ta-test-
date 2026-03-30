@@ -83,6 +83,10 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       STACKOVERFLOW_KEY: ${STACKOVERFLOW_KEY}
       PRODUCTHUNT_TOKEN: ${PRODUCTHUNT_TOKEN}
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN}
+      LI_AT: ${LI_AT}
+      LINKEDIN_EMAIL: ${LINKEDIN_EMAIL}
+      LINKEDIN_PASSWORD: ${LINKEDIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

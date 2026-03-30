@@ -1,0 +1,196 @@
+// =============================================================================
+// OpportunityScout - Prisma Schema
+// PostgreSQL 15
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// RawSignal
+// A single piece of content fetched from a crawler source (post, comment,
+// review, issue, etc.). Raw signals are the input to the AI pipeline.
+// =============================================================================
+
+model RawSignal {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique  // Unique identifier from the source (e.g., "reddit-abc123")
+  source      String            // "reddit" | "hackernews" | etc.
+  url         String
+  title       String
+  body        String   @db.Text
+  author      String?
+  score       Int      @default(0)    // Upvotes, stars, reactions
+  commentCount Int     @default(0)
+  publishedAt DateTime
+  crawledAt   DateTime @default(now())
+
+  // AI classification results (set after pipeline Step 1)
+  category    String?           // "MARKET_GAP" | "PAIN_POINT" | "FEATURE_REQUEST" | "NOISE"
+  filtered    Boolean  @default(false)  // true = processed by AI filter
+  noise       Boolean  @default(false)  // true = classified as NOISE, excluded from extraction
+
+  // Relations
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  // Additional metadata from the source (tags, subreddit, etc.)
+  metadata    Json     @default("{}")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([source])
+  @@index([category])
+  @@index([opportunityId])
+  @@index([crawledAt])
+  @@index([publishedAt])
+  @@map("raw_signals")
+}
+
+// =============================================================================
+// Opportunity
+// A deduplicated, clustered market opportunity extracted from multiple signals
+// by the AI pipeline.
+// =============================================================================
+
+model Opportunity {
+  id               String   @id @default(cuid())
+  title            String
+  problemStatement String   @db.Text
+  targetAudience   String
+  category         String   // "MARKET_GAP" | "PAIN_POINT" | "FEATURE_REQUEST"
+
+  // Composite score (0–100) and dimension scores
+  scoreComposite   Float
+  scoreVolume      Float
+  scoreMarketSize  Float
+  scoreSignificance Float
+  scoreUrgency     Float
+  previousScore    Float?   // Score from the previous scoring run (for isRising detection)
+
+  // Enrichment
+  keywords         String[]
+  sources          String[] // Which sources contributed signals
+  solutionHints    String[]
+  competitorContext String?  @db.Text
+  revenueIndicators String[]
+
+  // Relations
+  signals          RawSignal[]
+  scoreHistory     ScoreHistory[]
+
+  // Timestamps
+  firstSeenAt      DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([scoreComposite(sort: Desc)])
+  @@index([category])
+  @@index([createdAt])
+  @@map("opportunities")
+}
+
+// =============================================================================
+// ScoreHistory
+// Daily snapshot of an opportunity's composite score, enabling trend charts.
+// =============================================================================
+
+model ScoreHistory {
+  id            String   @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  date          String   // YYYY-MM-DD
+  composite     Float
+  volume        Float
+  marketSize    Float
+  significance  Float
+  urgency       Float
+
+  @@unique([opportunityId, date])
+  @@index([opportunityId])
+  @@map("score_history")
+}
+
+// =============================================================================
+// DailySummary
+// AI-generated executive summary for each day's discovered opportunities.
+// =============================================================================
+
+model DailySummary {
+  id                      String   @id @default(cuid())
+  date                    String   @unique  // YYYY-MM-DD
+  markdownContent         String   @db.Text
+  topOpportunityIds       String[] // Ordered list of top opportunity IDs
+  totalSignalsProcessed   Int
+  totalOpportunitiesFound Int
+  emailSent               Boolean  @default(false)
+  generatedAt             DateTime @default(now())
+
+  @@index([date(sort: Desc)])
+  @@map("daily_summaries")
+}
+
+// =============================================================================
+// JobRun
+// Audit log of every scheduled/manual job execution.
+// =============================================================================
+
+model JobRun {
+  id                   String    @id @default(cuid())
+  jobType              String    // "crawl" | "analyze" | "summary" | "email"
+  status               String    // "pending" | "running" | "completed" | "failed"
+  startedAt            DateTime
+  completedAt          DateTime?
+  durationMs           Int?
+  signalsProcessed     Int       @default(0)
+  opportunitiesCreated Int       @default(0)
+  errorMessage         String?
+  triggeredBy          String    @default("scheduler") // "scheduler" | "api"
+  metadata             Json      @default("{}")
+
+  @@index([jobType])
+  @@index([status])
+  @@index([startedAt(sort: Desc)])
+  @@map("job_runs")
+}
+
+// =============================================================================
+// Settings
+// Application-wide configuration stored in the database so it can be
+// updated at runtime without a redeploy.
+// =============================================================================
+
+model Settings {
+  id                    String   @id @default("default")
+  keywords              String[] // User-defined keywords to boost in scoring
+  enabledSources        String[] // Which crawlers are active
+  minOpportunityScore   Int      @default(40)
+
+  // Scoring weights (must sum to 1.0)
+  scoreWeightVolume      Float  @default(0.30)
+  scoreWeightMarketSize  Float  @default(0.30)
+  scoreWeightSignificance Float @default(0.25)
+  scoreWeightUrgency     Float  @default(0.15)
+
+  // Email
+  emailAlertsEnabled    Boolean @default(false)
+  alertEmail            String  @default("")
+  alertThreshold        Int     @default(75)
+
+  // Crawler
+  crawlSchedule         String  @default("0 5 * * *")
+  maxConcurrentCrawlers Int     @default(3)
+  crawlerDelayMs        Int     @default(1500)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("settings")
+}

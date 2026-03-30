@@ -1,0 +1,36 @@
+{
+  "name": "@opportunityscout/scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./crawlers/*": {
+      "types": "./src/crawlers/*.ts",
+      "default": "./dist/crawlers/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@opportunityscout/db": "*",
+    "axios": "^1.6.5",
+    "cheerio": "^1.0.0-rc.12",
+    "pino": "^8.18.0",
+    "robots-parser": "^3.0.1",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

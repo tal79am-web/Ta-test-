@@ -1,0 +1,23 @@
+{
+  "name": "@opportunityscout/tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
+  },
+  "dependencies": {
+    "@opportunityscout/ai": "*",
+    "@opportunityscout/db": "*",
+    "@opportunityscout/scraper": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "@vitest/ui": "^1.2.0",
+    "vitest": "^1.2.0"
+  }
+}
