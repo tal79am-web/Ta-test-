@@ -5,7 +5,7 @@ import { ExportButton } from '@/components/ExportButton';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
-const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001';
+const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? '';
 
 async function fetchDashboardData() {
   try {

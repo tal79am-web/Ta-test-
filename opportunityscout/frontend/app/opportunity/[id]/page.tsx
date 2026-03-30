@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { ScoreBar } from '@/components/ScoreBar';
 // TrendChart is defined locally below (see InlineTrendChart wrapper)
 
-const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001';
+const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? '';
 
 interface ScoreHistoryPoint {
   date: string;
