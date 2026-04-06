@@ -10,6 +10,13 @@ import { z } from "zod";
 
 import { SapConnector, SapConfig } from "./connectors/sap.js";
 import { GenericErpConnector, GenericErpConfig, AuthType } from "./connectors/generic.js";
+import {
+  analyzeConsultancy,
+  compareConsultancies,
+  generateSwotReport,
+  scoreFromText,
+  ConsultancyProfile,
+} from "./connectors/analysis.js";
 
 // ─── SAP config from environment ───────────────────────────────────────────
 function getSapConnector(): SapConnector | null {
@@ -199,6 +206,167 @@ const TOOLS: Tool[] = [
       },
     },
   },
+
+  // ── Data & AI Consultancy Analysis tools ─────────────────────────────────
+  {
+    name: "analyze_consultancy",
+    description:
+      "Analyze a data & AI consultancy across 12 key dimensions (technical depth, AI/ML capabilities, data engineering, industry expertise, talent, delivery, innovation, client portfolio, commercial model, scalability, ethics/governance, tooling). Returns a scored strengths-and-weaknesses report with SWOT, ideal client profile, and hiring recommendation.",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: { type: "string", description: "Consultancy name" },
+        description: { type: "string", description: "General description of the firm" },
+        founded: { type: "number", description: "Year founded" },
+        headcount: { type: "number", description: "Approximate employee count" },
+        headquarters: { type: "string", description: "HQ location" },
+        geographies: {
+          type: "array",
+          items: { type: "string" },
+          description: "Countries/regions where they operate",
+        },
+        industries: {
+          type: "array",
+          items: { type: "string" },
+          description: "Industry verticals they serve",
+        },
+        services: {
+          type: "array",
+          items: { type: "string" },
+          description: "Service offerings (e.g. ML engineering, data strategy, MLOps)",
+        },
+        technologies: {
+          type: "array",
+          items: { type: "string" },
+          description: "Technologies and platforms they work with",
+        },
+        notable_clients: {
+          type: "array",
+          items: { type: "string" },
+          description: "Named client references or logos",
+        },
+        certifications: {
+          type: "array",
+          items: { type: "string" },
+          description: "Cloud, vendor, or industry certifications",
+        },
+        case_studies: {
+          type: "array",
+          items: { type: "string" },
+          description: "Brief descriptions of notable case studies",
+        },
+        pricing_model: { type: "string", description: "How they price engagements" },
+        partnerships: {
+          type: "array",
+          items: { type: "string" },
+          description: "Strategic technology or channel partnerships",
+        },
+        awards: {
+          type: "array",
+          items: { type: "string" },
+          description: "Industry awards and recognition",
+        },
+        research_publications: {
+          type: "array",
+          items: { type: "string" },
+          description: "Research papers, blog posts, or publications",
+        },
+        additional_info: {
+          type: "string",
+          description: "Any additional context about the firm",
+        },
+      },
+    },
+  },
+  {
+    name: "analyze_consultancy_from_text",
+    description:
+      "Analyze a data & AI consultancy from unstructured text (e.g. a website scrape, LinkedIn description, or free-form notes). Claude will extract the profile and score it across 12 key dimensions.",
+    inputSchema: {
+      type: "object",
+      required: ["text"],
+      properties: {
+        text: {
+          type: "string",
+          description: "Free-form text about the consultancy to analyze",
+        },
+      },
+    },
+  },
+  {
+    name: "compare_consultancies",
+    description:
+      "Compare 2–5 data & AI consultancies side-by-side across 12 key dimensions. Returns a dimension-by-dimension scorecard, overall ranking, best-fit guidance by client type, and a final recommendation.",
+    inputSchema: {
+      type: "object",
+      required: ["consultancies"],
+      properties: {
+        consultancies: {
+          type: "array",
+          description: "Array of consultancy profiles to compare (2–5 firms)",
+          minItems: 2,
+          maxItems: 5,
+          items: {
+            type: "object",
+            required: ["name"],
+            properties: {
+              name: { type: "string" },
+              description: { type: "string" },
+              founded: { type: "number" },
+              headcount: { type: "number" },
+              headquarters: { type: "string" },
+              geographies: { type: "array", items: { type: "string" } },
+              industries: { type: "array", items: { type: "string" } },
+              services: { type: "array", items: { type: "string" } },
+              technologies: { type: "array", items: { type: "string" } },
+              notable_clients: { type: "array", items: { type: "string" } },
+              certifications: { type: "array", items: { type: "string" } },
+              case_studies: { type: "array", items: { type: "string" } },
+              pricing_model: { type: "string" },
+              partnerships: { type: "array", items: { type: "string" } },
+              awards: { type: "array", items: { type: "string" } },
+              research_publications: { type: "array", items: { type: "string" } },
+              additional_info: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "generate_swot_report",
+    description:
+      "Generate a detailed narrative SWOT report for a data & AI consultancy, suitable for executive decision-making. Optionally include client context to tailor the recommendation.",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: { type: "string", description: "Consultancy name" },
+        description: { type: "string" },
+        founded: { type: "number" },
+        headcount: { type: "number" },
+        headquarters: { type: "string" },
+        geographies: { type: "array", items: { type: "string" } },
+        industries: { type: "array", items: { type: "string" } },
+        services: { type: "array", items: { type: "string" } },
+        technologies: { type: "array", items: { type: "string" } },
+        notable_clients: { type: "array", items: { type: "string" } },
+        certifications: { type: "array", items: { type: "string" } },
+        case_studies: { type: "array", items: { type: "string" } },
+        pricing_model: { type: "string" },
+        partnerships: { type: "array", items: { type: "string" } },
+        awards: { type: "array", items: { type: "string" } },
+        research_publications: { type: "array", items: { type: "string" } },
+        additional_info: { type: "string" },
+        client_context: {
+          type: "string",
+          description:
+            "Optional: describe your organization and engagement goals so the report is tailored to your needs",
+        },
+      },
+    },
+  },
 ];
 
 // ─── Input schemas (for runtime validation) ────────────────────────────────
@@ -254,6 +422,37 @@ const ErpBodySchema = z.object({
 });
 
 const ErpDeleteSchema = z.object({ path: z.string() });
+
+// ─── Analysis schemas ────────────────────────────────────────────────────────
+const ConsultancyProfileSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  founded: z.number().optional(),
+  headcount: z.number().optional(),
+  headquarters: z.string().optional(),
+  geographies: z.array(z.string()).optional(),
+  industries: z.array(z.string()).optional(),
+  services: z.array(z.string()).optional(),
+  technologies: z.array(z.string()).optional(),
+  notable_clients: z.array(z.string()).optional(),
+  certifications: z.array(z.string()).optional(),
+  case_studies: z.array(z.string()).optional(),
+  pricing_model: z.string().optional(),
+  partnerships: z.array(z.string()).optional(),
+  awards: z.array(z.string()).optional(),
+  research_publications: z.array(z.string()).optional(),
+  additional_info: z.string().optional(),
+});
+
+const AnalyzeFromTextSchema = z.object({ text: z.string() });
+
+const CompareConsultanciesSchema = z.object({
+  consultancies: z.array(ConsultancyProfileSchema).min(2).max(5),
+});
+
+const SwotReportSchema = ConsultancyProfileSchema.extend({
+  client_context: z.string().optional(),
+});
 
 // ─── Server setup ───────────────────────────────────────────────────────────
 const server = new Server(
@@ -366,6 +565,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { path } = ErpDeleteSchema.parse(args);
         const result = await erp.delete(path);
         return jsonResult(result);
+      }
+
+      // ── Data & AI Consultancy Analysis tools ─────────────────────────────
+      case "analyze_consultancy": {
+        const profile = ConsultancyProfileSchema.parse(args) as ConsultancyProfile;
+        const analysis = await analyzeConsultancy(profile);
+        return jsonResult(analysis);
+      }
+
+      case "analyze_consultancy_from_text": {
+        const { text } = AnalyzeFromTextSchema.parse(args);
+        const analysis = await scoreFromText(text);
+        return jsonResult(analysis);
+      }
+
+      case "compare_consultancies": {
+        const { consultancies } = CompareConsultanciesSchema.parse(args);
+        const comparison = await compareConsultancies(consultancies as ConsultancyProfile[]);
+        return jsonResult(comparison);
+      }
+
+      case "generate_swot_report": {
+        const { client_context, ...profileFields } = SwotReportSchema.parse(args);
+        const report = await generateSwotReport(
+          profileFields as ConsultancyProfile,
+          client_context
+        );
+        return { content: [{ type: "text", text: report }] };
       }
 
       default:
