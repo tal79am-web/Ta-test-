@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =============================================================================
+   CSS Custom Properties — Light Mode
+   ============================================================================= */
+:root {
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-border: #e5e7eb;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-muted: #9ca3af;
+  --color-accent: #667eea;
+  --color-accent-hover: #5a6fd6;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  /* Score colors */
+  --color-score-high: #10b981;
+  --color-score-medium: #f59e0b;
+  --color-score-low: #ef4444;
+
+  /* Badge colors */
+  --color-badge-new: #667eea;
+  --color-badge-rising: #10b981;
+  --color-badge-market-gap: #8b5cf6;
+  --color-badge-pain-point: #ef4444;
+  --color-badge-feature: #f59e0b;
+}
+
+/* =============================================================================
+   CSS Custom Properties — Dark Mode
+   ============================================================================= */
+.dark {
+  --color-bg: #0f0f1a;
+  --color-surface: #1a1a2e;
+  --color-surface-elevated: #252540;
+  --color-border: #2d2d4e;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-accent: #818cf8;
+  --color-accent-hover: #a5b4fc;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+}
+
+/* =============================================================================
+   Base Styles
+   ============================================================================= */
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Smooth transitions for theme switching */
+*, *::before, *::after {
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+/* =============================================================================
+   Component Utilities
+   ============================================================================= */
+@layer components {
+  .card {
+    @apply rounded-xl border bg-white dark:bg-[#1a1a2e] border-gray-200 dark:border-[#2d2d4e] shadow-sm;
+  }
+
+  .card-elevated {
+    @apply rounded-xl border bg-white dark:bg-[#252540] border-gray-100 dark:border-[#2d2d4e] shadow-md;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-[#252540] hover:bg-gray-200 dark:hover:bg-[#2d2d4e] text-gray-700 dark:text-gray-200 font-medium text-sm transition-colors;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-[#252540] text-gray-600 dark:text-gray-300 font-medium text-sm transition-colors;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold;
+  }
+
+  .badge-new {
+    @apply badge bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300;
+  }
+
+  .badge-rising {
+    @apply badge bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300;
+  }
+
+  .badge-market-gap {
+    @apply badge bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300;
+  }
+
+  .badge-pain-point {
+    @apply badge bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300;
+  }
+
+  .badge-feature {
+    @apply badge bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-gray-300 dark:border-[#2d2d4e] bg-white dark:bg-[#1a1a2e] text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 transition-shadow;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-gray-900 dark:text-gray-100;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-gray-900 dark:text-gray-100;
+  }
+
+  .text-secondary {
+    @apply text-gray-600 dark:text-gray-400;
+  }
+
+  .divider {
+    @apply border-t border-gray-200 dark:border-[#2d2d4e];
+  }
+
+  /* Score bar base */
+  .score-bar-track {
+    @apply h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden;
+  }
+
+  .score-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+}
+
+/* =============================================================================
+   Recharts Overrides for Dark Mode
+   ============================================================================= */
+.dark .recharts-text {
+  fill: #94a3b8;
+}
+
+.dark .recharts-cartesian-axis-line,
+.dark .recharts-cartesian-grid-horizontal line,
+.dark .recharts-cartesian-grid-vertical line {
+  stroke: #2d2d4e;
+}
+
+/* =============================================================================
+   Scrollbar Styling
+   ============================================================================= */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
+}
