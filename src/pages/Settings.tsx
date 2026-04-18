@@ -12,7 +12,8 @@ import { useApp } from "@/contexts/AppContext";
 import { useTheme } from "@/contexts/ThemeContext";
 
 function Settings() {
-  const { user } = useApp();
+  const { user: _user } = useApp();
+  const user = _user!;
   const { theme, toggleTheme } = useTheme();
 
   return (

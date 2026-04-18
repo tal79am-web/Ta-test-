@@ -18,6 +18,7 @@ import {
   Sun,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -44,8 +45,14 @@ const navItems = [
 export function Navigation() {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const { user, notifications, clearNotifications } = useApp();
+  const { user, notifications, clearNotifications, logout } = useApp();
   const { theme, toggleTheme } = useTheme();
+  const [, navigate] = useLocation();
+
+  function handleLogout() {
+    logout();
+    navigate("/login");
+  }
 
   return (
     <aside
@@ -147,17 +154,30 @@ export function Navigation() {
           )}
         </button>
 
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className={cn(
+            "flex items-center gap-3 px-2 py-2 rounded-md text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors w-full",
+            collapsed && "justify-center"
+          )}
+          title={collapsed ? "Sign out" : undefined}
+        >
+          <LogOut className="w-4 h-4" />
+          {!collapsed && <span>Sign out</span>}
+        </button>
+
         {/* User */}
         <div className={cn("flex items-center gap-3 px-2 py-2", collapsed && "justify-center")}>
           <Avatar className="w-8 h-8 flex-shrink-0">
             <AvatarFallback className="text-xs bg-primary/10 text-primary">
-              {user.avatar}
+              {user?.avatar}
             </AvatarFallback>
           </Avatar>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{user.name}</p>
-              <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+              <p className="text-sm font-medium truncate">{user?.name}</p>
+              <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
             </div>
           )}
         </div>

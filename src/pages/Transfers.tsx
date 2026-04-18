@@ -19,7 +19,8 @@ const history = [
 ];
 
 function Transfers() {
-  const { user } = useApp();
+  const { user: _user } = useApp();
+  const user = _user!;
   const [amount, setAmount] = useState("");
 
   return (

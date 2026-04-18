@@ -58,7 +58,8 @@ function StatCard({
 }
 
 function Home() {
-  const { user, deals, portfolio } = useApp();
+  const { user: _user, deals, portfolio } = useApp();
+  const user = _user!;
   const featuredDeals = deals.filter((d) => d.featured).slice(0, 2);
   const totalValue = portfolio.reduce((sum, h) => sum + h.currentValue, 0);
   const totalInvested = portfolio.reduce((sum, h) => sum + h.invested, 0);

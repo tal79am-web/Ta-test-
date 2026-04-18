@@ -1,10 +1,11 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import Login from "@/pages/Login";
+import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { AppProvider } from "./contexts/AppContext";
+import { AppProvider, useApp } from "./contexts/AppContext";
 import { lazy, Suspense } from "react";
 
 // Pages
@@ -32,25 +33,35 @@ function PageLoader() {
   );
 }
 
+function PrivateRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated } = useApp();
+  return isAuthenticated ? <Component /> : <Redirect to="/login" />;
+}
+
 function Router() {
+  const { isAuthenticated } = useApp();
+
   return (
     <Suspense fallback={<PageLoader />}>
       <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/marketplace" component={Marketplace} />
-        <Route path="/deal/:id" component={DealRoom} />
-        <Route path="/deals" component={Deals} />
+        <Route path="/login">
+          {isAuthenticated ? <Redirect to="/" /> : <Login />}
+        </Route>
         <Route path="/onboarding" component={Onboarding} />
-        <Route path="/portfolio" component={Portfolio} />
-        <Route path="/clubs" component={Clubs} />
-        <Route path="/clubs/:id" component={ClubDetail} />
-        <Route path="/issuer" component={Issuer} />
-        <Route path="/transfers" component={Transfers} />
-        <Route path="/admin" component={Admin} />
-        <Route path="/copilot" component={Copilot} />
-        <Route path="/advisor" component={Advisor} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/watchlist" component={Watchlist} />
+        <Route path="/" component={() => <PrivateRoute component={Home} />} />
+        <Route path="/marketplace" component={() => <PrivateRoute component={Marketplace} />} />
+        <Route path="/deal/:id" component={() => <PrivateRoute component={DealRoom} />} />
+        <Route path="/deals" component={() => <PrivateRoute component={Deals} />} />
+        <Route path="/portfolio" component={() => <PrivateRoute component={Portfolio} />} />
+        <Route path="/clubs" component={() => <PrivateRoute component={Clubs} />} />
+        <Route path="/clubs/:id" component={() => <PrivateRoute component={ClubDetail} />} />
+        <Route path="/issuer" component={() => <PrivateRoute component={Issuer} />} />
+        <Route path="/transfers" component={() => <PrivateRoute component={Transfers} />} />
+        <Route path="/admin" component={() => <PrivateRoute component={Admin} />} />
+        <Route path="/copilot" component={() => <PrivateRoute component={Copilot} />} />
+        <Route path="/advisor" component={() => <PrivateRoute component={Advisor} />} />
+        <Route path="/settings" component={() => <PrivateRoute component={Settings} />} />
+        <Route path="/watchlist" component={() => <PrivateRoute component={Watchlist} />} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
