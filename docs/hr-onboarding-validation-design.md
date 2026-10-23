@@ -1,5 +1,7 @@
 # Artifact 4: Validation Design (HR Onboarding Coordination Agent)
 
+Validated against the capability spec, revision 2. Run with `scripts/validate_hr_onboarding.py`.
+
 ## 1. Happy path
 
 **Input.** The Workday webhook receives a full-time hire payload:
@@ -9,6 +11,7 @@
 - `start_date`: 2026-11-01
 - `role`: Software Engineer
 - `department`: Engineering
+- `worker_type`: EMPLOYEE
 
 **Flow.**
 
@@ -25,16 +28,17 @@ The design must handle each of these without breaking.
 
 - **E1 (unusable reference).** An email from a hiring manager has no usable candidate reference: "we have a new dev starting Monday in tech services". The record moves to `IDENT_FAILED` and goes to the HR Ops queue. The queue item holds the extracted text and candidate search suggestions. The agent never guesses an identity (D-2).
 - **E2 (time boundary).** A duplicate request arrives at the 72-hour boundary. Test both sides: a prior request logged 71h59m ago, and one logged 72h01m ago (D-3).
-- **E3 (concurrency burst).** A Workday webhook and a manager email for the same candidate arrive within seconds. An atomic distributed lock lets the first request win, moving it to `PENDING_DECISION`. The second becomes `DUPLICATE_HELD` (D-3).
-- **E4 (policy exception).** A contractor onboarding request arrives without complete compliance documentation by Day 2. The contractor compliance track is flagged `CONTRACTOR_TRACK_AMBIGUITY`. The record goes to the HR Ops queue with a 4-hour SLA clock (D-5).
+- **E3 (concurrency burst).** A Workday webhook and a manager email for the same candidate arrive within seconds. The atomic distributed lock lets the first request win and move to `PENDING_DECISION`. The second moves to `DUPLICATE_HELD` (D-3).
+- **E4 (policy exception).** A contractor onboarding request arrives without complete compliance documentation by Day 2. The record gets `CONTRACTOR_TRACK_AMBIGUITY`, goes to the HR Ops queue, and starts a 4-hour SLA clock (D-5, D-6).
 - **E5 (oversized input).** A manager's email notes field holds 4,000 characters of pasted text. Notes are truncated at 2,000 characters and flagged `NOTES_TRUNCATED`. Intake never fails (D-1).
 
 ## 3. Failure modes and recovery
 
-- **F1 (API outage).** The Workday or ServiceNow API is down or times out twice. The record is marked `IDENT_UNVERIFIED` and escalated. A background client probes every 5 minutes and retries automatically on recovery.
-- **F2 (error storm).** Enterprise API 5xx errors persist for more than 10 minutes. A transactional outbox queues writes durably. HR Ops is alerted. Urgent compliance and I-9 escalations continue through the HR Ops queue, flagged `FLAG_PENDING`. The queue drains FIFO on recovery.
-- **F3 (replays and bursts).** Webhook replays within 24 hours are dropped by event-ID idempotency. When alerts exceed 50 per minute, a circuit breaker returns 503 to the gateway so it buffers. An ops alarm is raised. Email and portal channels keep running.
-- **F4 (malformed LLM output).** The LLM returns malformed output or a classification outside the enum. Schema validation rejects it and the record takes the `UNCLASSIFIED` path into escalation. The system fails toward escalation (D-1).
+- **F1 (API outage).** The Workday or ServiceNow API is down or times out twice. The record is marked `IDENT_UNVERIFIED` and escalated. A background probe runs every 5 minutes and retries automatically on recovery (D-7).
+- **F2 (error storm).** Enterprise API 5xx errors persist for more than 10 minutes. A transactional outbox queues writes durably. HR Ops is alerted. Urgent compliance and I-9 escalations continue through the HR Ops queue, flagged `FLAG_PENDING`. The queue drains FIFO on recovery (D-7).
+- **F3 (replays and bursts).** Webhook replays within 24 hours are dropped by event-ID idempotency. When alerts exceed 50 per minute, a circuit breaker returns 503 to the gateway so it buffers. An ops alarm is raised. Email and portal channels keep running (D-7).
+- **F4 (malformed LLM output).** The LLM returns malformed output or a classification outside the enum. Schema validation rejects it, and the record moves to `UNCLASSIFIED` and then to `ESCALATED` for HR Ops review. The system fails toward escalation (D-1).
+- **F4b (repeated normalisation failure).** Three consecutive normalisation attempts fail, with timeouts or malformed output and no usable regex result. The record moves to `QUARANTINED` and is not retried automatically (D-1).
 
 ## 4. Quiet-failure monitoring
 
@@ -49,8 +53,8 @@ The validation suite must confirm that the logging layer captures the data neede
 
 **M1 (compliance SLA tracking)**
 
-- *Scenario:* Simulate an onboarding record approaching the Day-2 I-9 deadline or the LMS training deadline.
-- *Assertion:* The system records the exact timestamp delta between task trigger and completion or escalation. Breaches are flagged automatically.
+- *Scenario:* Simulate an onboarding record approaching the Day-2 I-9 deadline or the LMS training deadline. The LMS deadline value is TBD (spec section 8).
+- *Assertion:* The system records the exact timestamp delta between task trigger and completion or escalation. Breaches are flagged `SLA_BREACH` automatically.
 
 **M2 (judgment error and override telemetry)**
 
@@ -70,12 +74,10 @@ The validation suite must confirm that the logging layer captures the data neede
 **M5 (end-to-end completion latency)**
 
 - *Scenario:* Run a batch of mock onboarding payloads through the parallel durable workflow.
-- *Assertion:* 100% of standard workflow completion timestamps fall within the 1-week target window. The end of the sentence was cut off in the source, so this wording follows Artifacts 1 and 3.
+- *Assertion:* 100% of standard workflow completion timestamps fall within the 1-week target window. The source sentence was cut off, so this wording follows Artifacts 1 and 3. Confirm it (see 6).
 
 ## 6. Items to confirm
 
-1. **Undefined states and flags.** `PENDING_DECISION`, `DUPLICATE_HELD`, `IDENT_UNVERIFIED`, `CONTRACTOR_TRACK_AMBIGUITY` and `FLAG_PENDING` are not in the Artifact 3 enum or flag list. Add them to the spec.
-2. **Day-3 reference.** M1 cites a "Day-3 LMS" deadline, but the spec's Day-3 rule applies to I-9. Confirm the LMS deadline.
-3. **Undefined escalation path.** F4 refers to "S2/escalation path", which is not defined in the spec.
-4. **Contractor track.** E4 adds contractor compliance logic that the spec does not yet cover. Artifact 1 names this as a judgment call.
-5. **Truncated M5 assertion.** Completed as noted in section 5. Confirm the intended wording.
+1. **LMS deadline.** M1 needs the LMS training deadline value. The spec leaves it TBD (spec section 8, item 1).
+2. **M5 wording.** The assertion above completes a sentence cut off in the source. Confirm it.
+3. **Contractor track.** E4 relies on the D-6 rules, which are an assumption until HR confirms them (spec section 8, item 9).
