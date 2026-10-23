@@ -1,0 +1,81 @@
+# Artifact 4: Validation Design (HR Onboarding Coordination Agent)
+
+## 1. Happy path
+
+**Input.** The Workday webhook receives a full-time hire payload:
+
+- `candidate_id`: C-409
+- `name`: Jane Doe
+- `start_date`: 2026-11-01
+- `role`: Software Engineer
+- `department`: Engineering
+
+**Flow.**
+
+1. Exact match in the Workday directory (D-2).
+2. About 40 standard tasks initialised across Workday, ServiceNow and the LMS (D-4).
+3. IT provisioning tickets opened, compliance training assigned, welcome package dispatched.
+4. The state-transition event triggers the automated welcome email.
+
+**Expected outcome.** Latency under 30 seconds, a complete audit log, and zero HR Ops touches.
+
+## 2. Edge cases
+
+The design must handle each of these without breaking.
+
+- **E1 (unusable reference).** An email from a hiring manager has no usable candidate reference: "we have a new dev starting Monday in tech services". The record moves to `IDENT_FAILED` and goes to the HR Ops queue. The queue item holds the extracted text and candidate search suggestions. The agent never guesses an identity (D-2).
+- **E2 (time boundary).** A duplicate request arrives at the 72-hour boundary. Test both sides: a prior request logged 71h59m ago, and one logged 72h01m ago (D-3).
+- **E3 (concurrency burst).** A Workday webhook and a manager email for the same candidate arrive within seconds. An atomic distributed lock lets the first request win, moving it to `PENDING_DECISION`. The second becomes `DUPLICATE_HELD` (D-3).
+- **E4 (policy exception).** A contractor onboarding request arrives without complete compliance documentation by Day 2. The contractor compliance track is flagged `CONTRACTOR_TRACK_AMBIGUITY`. The record goes to the HR Ops queue with a 4-hour SLA clock (D-5).
+- **E5 (oversized input).** A manager's email notes field holds 4,000 characters of pasted text. Notes are truncated at 2,000 characters and flagged `NOTES_TRUNCATED`. Intake never fails (D-1).
+
+## 3. Failure modes and recovery
+
+- **F1 (API outage).** The Workday or ServiceNow API is down or times out twice. The record is marked `IDENT_UNVERIFIED` and escalated. A background client probes every 5 minutes and retries automatically on recovery.
+- **F2 (error storm).** Enterprise API 5xx errors persist for more than 10 minutes. A transactional outbox queues writes durably. HR Ops is alerted. Urgent compliance and I-9 escalations continue through the HR Ops queue, flagged `FLAG_PENDING`. The queue drains FIFO on recovery.
+- **F3 (replays and bursts).** Webhook replays within 24 hours are dropped by event-ID idempotency. When alerts exceed 50 per minute, a circuit breaker returns 503 to the gateway so it buffers. An ops alarm is raised. Email and portal channels keep running.
+- **F4 (malformed LLM output).** The LLM returns malformed output or a classification outside the enum. Schema validation rejects it and the record takes the `UNCLASSIFIED` path into escalation. The system fails toward escalation (D-1).
+
+## 4. Quiet-failure monitoring
+
+- **Weekly blind re-review.** An HR Ops specialist re-reviews 30 auto-processed records, stratified by department and source. Agreement below 98% triggers threshold retuning.
+- **Escalation-outcome audit loop.** Any record followed within 7 days by a compliance flag, an audit discrepancy or a manual intervention gets root-cause tagging: `AGENT_MISS`, `MANAGER_ERROR` or `DATA_SOURCE_LAG`.
+- **Distribution drift monitors.** Track daily onboarding volume, department mix, dedup-merge rate and mean extraction confidence against a 28-day rolling baseline. A deviation beyond ±3σ triggers review.
+- **Override telemetry.** An HR Ops override rate above 15% on any trigger for one week indicates a mis-set rule or threshold.
+
+## 5. Success metric telemetry and observability validation
+
+The validation suite must confirm that the logging layer captures the data needed for M1 to M5.
+
+**M1 (compliance SLA tracking)**
+
+- *Scenario:* Simulate an onboarding record approaching the Day-2 I-9 deadline or the LMS training deadline.
+- *Assertion:* The system records the exact timestamp delta between task trigger and completion or escalation. Breaches are flagged automatically.
+
+**M2 (judgment error and override telemetry)**
+
+- *Scenario:* Trigger an identity match failure (E1) or a policy exception (E4), then simulate an HR Ops manual override.
+- *Assertion:* The audit log captures the root-cause tag and the human actor ID, so monthly audit error rates can be computed.
+
+**M3 (administrative hours reduction)**
+
+- *Scenario:* Run a standard happy-path record through all 36 automated tasks.
+- *Assertion:* No manual intervention is logged for Categories 1 to 4. Labour hours saved can be calculated from automated duration against the baseline manual time.
+
+**M4 (orphaned task and drop-off audit)**
+
+- *Scenario:* Simulate a stalled branch where an external API webhook never returns.
+- *Assertion:* After the 4-hour threshold, the system flags an unflagged stall and fires an automated alert. The target is 0% unflagged drop-offs.
+
+**M5 (end-to-end completion latency)**
+
+- *Scenario:* Run a batch of mock onboarding payloads through the parallel durable workflow.
+- *Assertion:* 100% of standard workflow completion timestamps fall within the 1-week target window. The end of the sentence was cut off in the source, so this wording follows Artifacts 1 and 3.
+
+## 6. Items to confirm
+
+1. **Undefined states and flags.** `PENDING_DECISION`, `DUPLICATE_HELD`, `IDENT_UNVERIFIED`, `CONTRACTOR_TRACK_AMBIGUITY` and `FLAG_PENDING` are not in the Artifact 3 enum or flag list. Add them to the spec.
+2. **Day-3 reference.** M1 cites a "Day-3 LMS" deadline, but the spec's Day-3 rule applies to I-9. Confirm the LMS deadline.
+3. **Undefined escalation path.** F4 refers to "S2/escalation path", which is not defined in the spec.
+4. **Contractor track.** E4 adds contractor compliance logic that the spec does not yet cover. Artifact 1 names this as a judgment call.
+5. **Truncated M5 assertion.** Completed as noted in section 5. Confirm the intended wording.
