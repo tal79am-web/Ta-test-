@@ -26,19 +26,28 @@ Validated against the capability spec, revision 2. Run with `scripts/validate_hr
 
 The design must handle each of these without breaking.
 
-- **E1 (unusable reference).** An email from a hiring manager has no usable candidate reference: "we have a new dev starting Monday in tech services". The record moves to `IDENT_FAILED` and goes to the HR Ops queue. The queue item holds the extracted text and candidate search suggestions. The agent never guesses an identity (D-2).
+- **E1 (unusable reference).** An email from a hiring manager has no usable candidate reference: "we have a new dev starting Monday in tech services". The record moves to `IDENT_FAILED` and goes to the HR Ops queue. The queue item holds the extracted text and candidate search suggestions. The agent never guesses an identity. A near-match scoring 0.95 or higher proceeds with `IDENT_FUZZY` (D-2).
 - **E2 (time boundary).** A duplicate request arrives at the 72-hour boundary. Test both sides: a prior request logged 71h59m ago, and one logged 72h01m ago (D-3).
 - **E3 (concurrency burst).** A Workday webhook and a manager email for the same candidate arrive within seconds. The atomic distributed lock lets the first request win and move to `PENDING_DECISION`. The second moves to `DUPLICATE_HELD` (D-3).
-- **E4 (policy exception).** A contractor onboarding request arrives without complete compliance documentation by Day 2. The record gets `CONTRACTOR_TRACK_AMBIGUITY`, goes to the HR Ops queue, and starts a 4-hour SLA clock (D-5, D-6).
+- **E4 (policy exception).** A contractor onboarding request arrives without complete compliance documentation by Day 2. The record gets `I9_COMPLIANCE_HOLD` and `CONTRACTOR_TRACK_AMBIGUITY`, goes to the HR Ops queue, and starts a 4-hour SLA clock (D-5, D-6).
 - **E5 (oversized input).** A manager's email notes field holds 4,000 characters of pasted text. Notes are truncated at 2,000 characters and flagged `NOTES_TRUNCATED`. Intake never fails (D-1).
 
 ## 3. Failure modes and recovery
 
 - **F1 (API outage).** The Workday or ServiceNow API is down or times out twice. The record is marked `IDENT_UNVERIFIED` and escalated. A background probe runs every 5 minutes and retries automatically on recovery (D-7).
-- **F2 (error storm).** Enterprise API 5xx errors persist for more than 10 minutes. A transactional outbox queues writes durably. HR Ops is alerted. Urgent compliance and I-9 escalations continue through the HR Ops queue, flagged `FLAG_PENDING`. The queue drains FIFO on recovery (D-7).
-- **F3 (replays and bursts).** Webhook replays within 24 hours are dropped by event-ID idempotency. When alerts exceed 50 per minute, a circuit breaker returns 503 to the gateway so it buffers. An ops alarm is raised. Email and portal channels keep running (D-7).
-- **F4 (malformed LLM output).** The LLM returns malformed output or a classification outside the enum. Schema validation rejects it, and the record moves to `UNCLASSIFIED` and then to `ESCALATED` for HR Ops review. The system fails toward escalation (D-1).
-- **F4b (repeated normalisation failure).** Three consecutive normalisation attempts fail, with timeouts or malformed output and no usable regex result. The record moves to `QUARANTINED` and is not retried automatically (D-1).
+- **F2 (error storm).** Three consecutive 5xx responses from an enterprise API open the circuit for 60 seconds, and writes queue while it is open. If 5xx errors persist for more than 10 minutes, a transactional outbox queues writes durably. HR Ops is alerted. Urgent compliance and I-9 escalations continue through the HR Ops queue, flagged `FLAG_PENDING`. The queue drains FIFO on recovery (D-7).
+- **F3 (replays and bursts).** Webhook replays within 24 hours are dropped by event-ID idempotency. When alerts exceed 50 per minute, intake protection returns 503 to the gateway so it buffers. An ops alarm is raised. Email and portal channels keep running (D-7).
+- **F4 (malformed LLM output).** The LLM returns malformed output or a classification outside the enum. Schema validation rejects it and the record is tagged `LLM_FALLBACK_USED`. If no candidate details can be extracted, the record gets the `UNCLASSIFIED` flag and moves to `ESCALATED` for HR Ops review. The system fails toward escalation (D-1).
+- **F4b (repeated normalisation failure).** Three cumulative normalisation failures set the record to `QUARANTINED`. It is not retried automatically (D-1).
+- **F4c (quarantine release).** A quarantined record returns to `RECEIVED` only through the HR admin override, with the admin as actor. An automatic release is rejected. A quarantined record can also move to `TERMINATED` (3.3).
+
+## 2a. Additional edge cases
+
+- **E6 (buddy fallback).** No peer matches department and location with tenure of at least 1 year. The sequence tries same department with remote or global location, then cross-department with the same location. If both fail, the record gets `BUDDY_MATCH_FAILED`, a null mentor, and HR Ops routing, and onboarding continues. A mentor with ambiguous seniority gets `BUDDY_SENIORITY_REVIEW` (D-4).
+
+## 3a. Security and retention
+
+- **S1 (encryption and retention).** Candidate PII is encrypted in transit with TLS 1.3 and at rest with AES-256. A non-hired candidate record is purged at 90 days. A record 89 days old is kept. A hired candidate's record is not purged by this rule (3.1).
 
 ## 4. Quiet-failure monitoring
 
@@ -78,6 +87,8 @@ The validation suite must confirm that the logging layer captures the data neede
 
 ## 6. Items to confirm
 
-1. **LMS deadline.** M1 needs the LMS training deadline value. The spec leaves it TBD (spec section 8, item 1).
+1. **LMS deadline.** M1 needs the LMS training deadline value. The spec leaves it TBD (spec section 7, item 1).
 2. **M5 wording.** The assertion above completes a sentence cut off in the source. Confirm it.
-3. **Contractor track.** E4 relies on the D-6 rules, which are an assumption until HR confirms them (spec section 8, item 9).
+3. **Contractor track.** E4 relies on the D-6 rules, which are an assumption until HR confirms them (spec section 7, item 15).
+4. **Status and flag reconciliation.** Revision 3 moved `UNCLASSIFIED` to a flag. Validation F4 follows that. Confirm (spec section 7, item 4).
+5. **Retention.** S1 assumes a 90-day purge for non-hired candidates. Hired-record retention is open (spec section 7, item 6).
