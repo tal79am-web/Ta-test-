@@ -18,6 +18,11 @@ export function toUtcDate(iso: string): Date {
   return d;
 }
 
+/** Whole days from `from` to `to`. Negative if `to` is earlier. */
+export function dayDiff(from: string, to: string): number {
+  return Math.round((toUtcDate(to).getTime() - toUtcDate(from).getTime()) / 86_400_000);
+}
+
 export function isValidDate(value: unknown): value is string {
   if (typeof value !== "string" || !DATE_RE.test(value)) return false;
   try {
@@ -48,6 +53,13 @@ export function addBusinessDays(iso: string, count: number, cal: Calendar): stri
     cur = addDays(cur, step);
     if (isBusinessDay(cur, cal)) remaining -= 1;
   }
+  return cur;
+}
+
+/** A due date that falls on a non-business day moves back to the previous business day. */
+export function onOrBeforeBusinessDay(iso: string, cal: Calendar): string {
+  let cur = iso;
+  while (!isBusinessDay(cur, cal)) cur = addDays(cur, -1);
   return cur;
 }
 

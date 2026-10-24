@@ -14,8 +14,8 @@ export type GateResult =
 
 /**
  * Assigns a track only when Workday, the offer and the intake email all give the
- * same valid worker type, and no linked worker record disagrees. Any missing or
- * mismatched value makes the result ambiguous.
+ * same valid worker type, and no linked worker record disagrees. A null or missing
+ * value in any source makes the result ambiguous.
  */
 export function evaluateTrackGate(workerId: string, sources: TrackSourceRecord): GateResult {
   const reasons: string[] = [];
@@ -26,7 +26,7 @@ export function evaluateTrackGate(workerId: string, sources: TrackSourceRecord):
   ];
 
   for (const [name, value] of named) {
-    if (value === undefined) reasons.push(`${name} source has no worker type`);
+    if (value === undefined || value === null) reasons.push(`${name} source has no worker type`);
     else if (!isWorkerType(value)) reasons.push(`${name} source has unrecognised worker type "${String(value)}"`);
   }
 

@@ -1,9 +1,16 @@
 import { randomUUID } from "crypto";
-import { addBusinessDays, addDays, Calendar, isValidDate, utcDate } from "./calendar";
+import { addBusinessDays, addDays, Calendar, isValidDate, onOrBeforeBusinessDay, utcDate } from "./calendar";
 import { evaluateTrackGate, GateResult, isWorkerType } from "./consistency";
 import { assessI9 } from "./i9";
 import { BuddyPolicy, DEFAULT_BUDDY_POLICY, DirectoryEntry, proposeBuddies } from "./buddy";
-import { classifyIntake, INTAKE_CONFIDENCE_FLOOR, IntakeClassifier, IntakeEmail } from "./intake";
+import {
+  AUTO_ACCEPT_INTENTS,
+  classifyIntake,
+  INTAKE_CONFIDENCE_FLOOR,
+  IntakeClassifier,
+  IntakeEmail,
+  IntakeOutput,
+} from "./intake";
 import { RetryPolicy, withRetry } from "./retry";
 import { SourceAdapter, ToolRunner } from "./tools";
 import { Store } from "./store";
@@ -59,18 +66,11 @@ const OPTIONS: Record<FlagType, string[]> = {
   INTAKE_REVIEW: ["worker_type", "dismissed"],
 };
 
-const REQUIRED_FIELDS = [
-  "workerType",
-  "offerWorkerType",
-  "startDate",
-  "location",
-  "site",
-  "team",
-  "roleFamily",
-  "jobLevel",
-  "managerId",
-] as const;
+// DATA_MISSING applies only to these fields (fixtures README, labelling rule 1).
+// A null worker type or offer type is handled by the R3 gate instead.
+const REQUIRED_FIELDS = ["location", "jobLevel", "managerId"] as const;
 
+/** Site is the hire's location. Team comes from the manager, so it is checked separately in createCase. */
 export function missingFields(event: WorkdayNewHireEvent): string[] {
   const missing: string[] = [];
   if (!event.workerId) missing.push("workerId");
@@ -78,8 +78,13 @@ export function missingFields(event: WorkdayNewHireEvent): string[] {
     const value = event[field];
     if (value === undefined || value === null || value === "") missing.push(field);
   }
-  if (!missing.includes("startDate") && !isValidDate(event.startDate)) missing.push("startDate");
+  if (!isValidDate(event.startDate)) missing.push("startDate");
   return missing;
+}
+
+/** I-9 applies to US hires who are not contractors. A null worker type is tracked. */
+export function i9Applies(h: { country?: string | null; workerType?: string | null }): boolean {
+  return h.country === "US" && h.workerType !== "contractor";
 }
 
 function requireComplete(c: OnboardingCase): CompleteHire {
@@ -148,19 +153,24 @@ export class Orchestrator {
       return { caseId: existing.id, created: false };
     }
 
+    // Team is taken from the manager's record. An unknown manager is missing data.
+    const manager = this.directory.find((d) => d.workerId === event.managerId);
     const missing = missingFields(event);
+    if (event.managerId && !manager && !missing.includes("managerId")) missing.push("managerId");
+
     const c: OnboardingCase = {
       id: randomUUID(),
       key,
       state: "PLANNED",
       templateVersion: TEMPLATE_VERSION,
-      hire: { ...event },
+      hire: { ...event, team: manager?.team ?? null },
       missingFields: missing,
       trackSources: {},
       track: null,
       i9: { section1Done: false, section2Done: false },
       i9Alerts: [],
       buddy: null,
+      buddyPreference: null,
       createdAt: this.nowIso(),
       closedAt: null,
     };
@@ -190,10 +200,11 @@ export class Orchestrator {
     for (const tpl of TASK_TEMPLATES) {
       const id = `${c.id}:${tpl.key}`;
       if (this.store.state.tasks[id]) continue;
+      // A due date on a non-business day moves back to the previous business day.
       const dueDate =
         tpl.offset.unit === "business_days"
           ? addBusinessDays(h.startDate, tpl.offset.days, this.calendar)
-          : addDays(h.startDate, tpl.offset.days);
+          : onOrBeforeBusinessDay(addDays(h.startDate, tpl.offset.days), this.calendar);
       const task: Task = {
         id,
         caseId: c.id,
@@ -271,7 +282,7 @@ export class Orchestrator {
       case "it_request": {
         const result = await this.tools.invoke(
           "servicenow_create_request",
-          { workerId: h.workerId, roleFamily: h.roleFamily },
+          { workerId: h.workerId, roleFamily: h.roleFamily ?? null },
           ctx,
         );
         return { kind: "done", result, completedBy: AGENT };
@@ -338,7 +349,7 @@ export class Orchestrator {
         if (c.buddy?.rejected) return { kind: "blocked" };
 
         const res = proposeBuddies(
-          { workerId: h.workerId, site: h.site, team: h.team, jobLevel: h.jobLevel, managerId: h.managerId },
+          { workerId: h.workerId, site: h.location, team: h.team, jobLevel: h.jobLevel, startDate: h.startDate },
           this.directory,
           this.buddyPolicy,
         );
@@ -356,7 +367,7 @@ export class Orchestrator {
             type: "BUDDY_NO_MATCH",
             dedupeKey: `BUDDY_NO_MATCH:${c.id}`,
             rule: "R7 no candidate meets the buddy rules",
-            evidence: { policy: this.buddyPolicy },
+            evidence: { policy: this.buddyPolicy, site: h.location, team: h.team },
           });
           return { kind: "blocked" };
         }
@@ -365,8 +376,8 @@ export class Orchestrator {
             caseId: c.id,
             type: "BUDDY_SENIORITY",
             dedupeKey: `BUDDY_SENIORITY:${c.id}`,
-            rule: `R7 best match exceeds the seniority norm of ${this.buddyPolicy.maxSeniorLevelGap} levels`,
-            evidence: { proposals: res.proposals, maxSeniorLevelGap: this.buddyPolicy.maxSeniorLevelGap },
+            rule: `R7 top-ranked buddy's absolute level gap exceeds ${this.buddyPolicy.maxLevelGap}`,
+            evidence: { proposals: res.proposals, maxLevelGap: this.buddyPolicy.maxLevelGap },
           });
           return { kind: "blocked" };
         }
@@ -426,6 +437,7 @@ export class Orchestrator {
   private checkI9(c: OnboardingCase): void {
     if (c.missingFields.length > 0) return;
     const h = requireComplete(c);
+    if (!i9Applies(h)) return;
     const today = this.today();
     for (const finding of assessI9(h.startDate, c.i9, today, this.calendar)) {
       if (finding.status === "breach") {
@@ -478,30 +490,33 @@ export class Orchestrator {
 
     const out = parsed.value;
     const target = out.case_id ? this.store.state.cases[out.case_id] : undefined;
+    const intent = out.intents.length === 1 ? out.intents[0] : null;
     this.audit(
       AGENT,
       "intake.classified",
       target?.id ?? null,
       { messageId: email.messageId, sender: email.sender },
-      { intent: out.intent, confidence: out.confidence, case_id: out.case_id, evidence_quote: out.evidence_quote },
+      { intents: out.intents, confidence: out.confidence, case_id: out.case_id, evidence_quote: out.evidence_quote },
     );
 
+    const reasons: string[] = [];
+    if (!target) reasons.push("no matching case");
+    if (out.confidence < INTAKE_CONFIDENCE_FLOOR) reasons.push(`confidence ${out.confidence} below ${INTAKE_CONFIDENCE_FLOOR}`);
+    if (out.intents.length > 1) reasons.push(`multiple intents: ${out.intents.join(", ")}`);
+    if (intent !== null && !AUTO_ACCEPT_INTENTS.has(intent)) reasons.push(`intent "${intent}" is routed to a human`);
+    if (out.suspected_prompt_injection) reasons.push("suspected prompt injection");
+
     const wt: unknown = out.fields["worker_type"];
-    if (target && out.intent === "worker_type" && out.confidence >= INTAKE_CONFIDENCE_FLOOR && isWorkerType(wt)) {
-      target.trackSources.email = wt;
-      this.audit(AGENT, "intake.worker_type_recorded", target.id, { messageId: email.messageId }, { workerType: wt });
+    if (intent === "worker_type_clarification" && !isWorkerType(wt)) {
+      reasons.push("worker_type field missing or unrecognised");
+    }
+
+    if (reasons.length === 0 && target && intent !== null) {
+      this.applyIntake(target, intent, out, email);
       this.refresh(target);
       this.store.save();
       return { outcome: "applied", caseId: target.id, flagId: null };
     }
-
-    const reasons: string[] = [];
-    if (!target) reasons.push("no matching case");
-    if (out.confidence < INTAKE_CONFIDENCE_FLOOR) {
-      reasons.push(`confidence ${out.confidence} below ${INTAKE_CONFIDENCE_FLOOR}`);
-    }
-    if (out.intent !== "worker_type") reasons.push(`intent "${out.intent}" needs a human`);
-    if (out.intent === "worker_type" && !isWorkerType(wt)) reasons.push("worker_type field missing or unrecognised");
 
     const flag = this.raiseFlag({
       caseId: target?.id ?? null,
@@ -512,13 +527,37 @@ export class Orchestrator {
         messageId: email.messageId,
         sender: email.sender,
         reasons,
-        intent: out.intent,
+        intents: out.intents,
         confidence: out.confidence,
         evidence_quote: out.evidence_quote,
       },
     });
     this.store.save();
     return { outcome: "queued", caseId: target?.id ?? null, flagId: flag.id };
+  }
+
+  /**
+   * Records an auto-accepted intent. Only worker_type_clarification changes state,
+   * and it only feeds the R3 gate. Other intents are recorded and never acted on.
+   * I-9 documents are a signal only, and a buddy preference is never a confirmation.
+   */
+  private applyIntake(target: OnboardingCase, intent: string, out: IntakeOutput, email: IntakeEmail): void {
+    switch (intent) {
+      case "worker_type_clarification": {
+        const wt = out.fields["worker_type"];
+        if (!isWorkerType(wt)) throw new Error("worker_type_clarification without a valid worker_type");
+        target.trackSources.email = wt;
+        this.audit(AGENT, "intake.worker_type_recorded", target.id, { messageId: email.messageId }, { workerType: wt });
+        return;
+      }
+      case "buddy_preference":
+        target.buddyPreference = out.fields["preference"] ?? out.evidence_quote;
+        this.audit(AGENT, "intake.buddy_preference_recorded", target.id, { messageId: email.messageId }, { recorded: true });
+        return;
+      default:
+        // start_date_change, equipment_request, i9_documents_submitted: recorded as a signal only.
+        this.audit(AGENT, "intake.signal", target.id, { messageId: email.messageId, intent }, { fields: out.fields });
+    }
   }
 
   // ─── R8: flag queue ─────────────────────────────────────────────────────────

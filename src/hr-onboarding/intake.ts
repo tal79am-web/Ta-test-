@@ -1,17 +1,37 @@
 import { z } from "zod";
 
 // R4: email intake. The model classifies and extracts only. Its output is validated
-// against a fixed schema and never triggers an action on its own.
+// against a fixed schema. Routing is decided in code, not by the model.
 
 export const INTAKE_CONFIDENCE_FLOOR = 0.8;
-export const INTAKE_INTENTS = ["worker_type", "i9_status", "other"] as const;
+
+export const INTAKE_INTENTS = [
+  "worker_type_clarification",
+  "start_date_change",
+  "equipment_request",
+  "i9_documents_submitted",
+  "buddy_preference",
+  "benefits_question",
+  "hold_instruction",
+  "other",
+] as const;
+
+/** Intents the agent records without a human. Everything else goes to the review queue. */
+export const AUTO_ACCEPT_INTENTS: ReadonlySet<string> = new Set([
+  "worker_type_clarification",
+  "start_date_change",
+  "equipment_request",
+  "i9_documents_submitted",
+  "buddy_preference",
+]);
 
 export const IntakeOutputSchema = z.object({
   case_id: z.string().nullable(),
-  intent: z.enum(INTAKE_INTENTS),
+  intents: z.array(z.enum(INTAKE_INTENTS)).min(1),
   fields: z.record(z.string()),
   confidence: z.number().min(0).max(1),
   evidence_quote: z.string(),
+  suspected_prompt_injection: z.boolean(),
 });
 
 export type IntakeOutput = z.infer<typeof IntakeOutputSchema>;

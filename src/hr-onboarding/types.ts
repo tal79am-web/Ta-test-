@@ -1,4 +1,5 @@
-// Shared domain types for the HR onboarding agent. See docs/hr-onboarding/SPEC.md.
+// Shared domain types for the HR onboarding agent. See docs/hr-onboarding/SPEC.md
+// and the fixtures README for labelling rules.
 
 export type CaseState = "PLANNED" | "IN_PROGRESS" | "BLOCKED" | "READY_DAY1" | "CLOSED";
 export type WorkerType = "employee" | "contractor";
@@ -24,47 +25,47 @@ export type TaskKey =
   | "benefits_reminder"
   | "handoff_pack";
 
-/** Payload of a Workday new-hire or rehire event (R1). Optional fields are validated on intake. */
+/**
+ * Payload of a Workday new-hire or rehire event (R1).
+ * A null worker type or offer type is a real value meaning "unknown", and
+ * triggers TRACK_AMBIGUOUS rather than DATA_MISSING.
+ */
 export interface WorkdayNewHireEvent {
   eventType: "new_hire" | "rehire";
   workerId: string;
-  workerType?: string;
-  offerWorkerType?: string;
-  startDate?: string;
-  location?: string;
-  site?: string;
-  team?: string;
-  roleFamily?: string;
-  jobLevel?: number;
-  managerId?: string;
+  workerType?: string | null;
+  offerWorkerType?: string | null;
+  startDate?: string | null;
+  location?: string | null;
+  country?: string | null;
+  roleFamily?: string | null;
+  jobLevel?: number | null;
+  managerId?: string | null;
+  /** Derived from the manager's team in the directory at case creation. Any supplied value is replaced. */
+  team?: string | null;
 }
 
 export type HireRecord = WorkdayNewHireEvent;
 
-/** A hire record once every required field has been supplied. */
+/** A hire record once the required fields are present. */
 export type CompleteHire = WorkdayNewHireEvent & {
-  workerType: string;
-  offerWorkerType: string;
   startDate: string;
   location: string;
-  site: string;
-  team: string;
-  roleFamily: string;
   jobLevel: number;
   managerId: string;
+  team: string;
 };
 
 /** Worker-type values from each source compared by the R3 gate. */
 export interface TrackSourceRecord {
-  workday?: string;
-  offer?: string;
-  email?: string;
+  workday?: string | null;
+  offer?: string | null;
+  email?: string | null;
   linked?: { workerId: string; workerType: string }[];
 }
 
 export interface BuddyProposalRecord {
   workerId: string;
-  score: number;
   levelGap: number;
   rationale: string;
 }
@@ -89,6 +90,7 @@ export interface OnboardingCase {
   i9: { section1Done: boolean; section2Done: boolean };
   i9Alerts: string[];
   buddy: BuddyState | null;
+  buddyPreference: string | null;
   createdAt: string;
   closedAt: string | null;
 }

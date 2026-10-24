@@ -1,26 +1,32 @@
-// R7: buddy proposal. Rule-based scoring only. The rationale text is generated from
-// the rules, so every proposal can be explained.
+import { dayDiff } from "./calendar";
+
+// R7: buddy proposal, using the fixtures README rules.
+// Eligible: same site, different team from the hire, employee, active,
+// tenure >= 183 days at start date, buddy load <= 1.
+// Ranked by absolute level gap, then buddy load, then earlier hire date, then worker ID.
+// Seniority flag: the top-ranked candidate's absolute level gap exceeds the norm.
 
 export interface DirectoryEntry {
   workerId: string;
+  workerType: string | null;
+  status: "active" | "on_leave" | "terminated";
   site: string;
   team: string;
   level: number;
-  tenureMonths: number;
+  hireDate: string;
   buddyLoad: number;
-  isManager?: boolean;
 }
 
 export interface BuddyPolicy {
-  minTenureMonths: number;
+  minTenureDays: number;
   maxBuddyLoad: number;
-  maxSeniorLevelGap: number;
+  maxLevelGap: number;
 }
 
 export const DEFAULT_BUDDY_POLICY: BuddyPolicy = {
-  minTenureMonths: 6,
+  minTenureDays: 183,
   maxBuddyLoad: 1,
-  maxSeniorLevelGap: 2,
+  maxLevelGap: 2,
 };
 
 export interface BuddyHire {
@@ -28,12 +34,11 @@ export interface BuddyHire {
   site: string;
   team: string;
   jobLevel: number;
-  managerId: string;
+  startDate: string;
 }
 
 export interface BuddyScored {
   workerId: string;
-  score: number;
   levelGap: number;
   rationale: string;
 }
@@ -51,31 +56,33 @@ export function proposeBuddies(
   const eligible = directory.filter(
     (c) =>
       c.workerId !== hire.workerId &&
-      c.workerId !== hire.managerId &&
-      c.isManager !== true &&
+      c.workerType === "employee" &&
+      c.status === "active" &&
       c.site === hire.site &&
       c.team !== hire.team &&
-      c.tenureMonths >= policy.minTenureMonths &&
+      dayDiff(c.hireDate, hire.startDate) >= policy.minTenureDays &&
       c.buddyLoad <= policy.maxBuddyLoad,
   );
 
-  const scored: BuddyScored[] = eligible.map((c) => {
-    const levelGap = c.level - hire.jobLevel;
-    const tenureScore = Math.min(c.tenureMonths, 24) / 24;
-    const loadScore = c.buddyLoad === 0 ? 1 : 0.5;
-    const levelScore = 1 - Math.min(Math.abs(levelGap), 3) / 3;
-    const score = Math.round((0.5 * tenureScore + 0.3 * loadScore + 0.2 * levelScore) * 1000) / 1000;
+  const ranked = eligible
+    .map((c) => ({ c, levelGap: c.level - hire.jobLevel }))
+    .sort(
+      (a, b) =>
+        Math.abs(a.levelGap) - Math.abs(b.levelGap) ||
+        a.c.buddyLoad - b.c.buddyLoad ||
+        a.c.hireDate.localeCompare(b.c.hireDate) ||
+        a.c.workerId.localeCompare(b.c.workerId),
+    );
+
+  const proposals: BuddyScored[] = ranked.slice(0, 3).map(({ c, levelGap }) => {
     const sign = levelGap >= 0 ? "+" : "";
     return {
       workerId: c.workerId,
-      score,
       levelGap,
-      rationale: `same site ${c.site}; team ${c.team} differs from ${hire.team}; tenure ${c.tenureMonths} months; buddy load ${c.buddyLoad}; level gap ${sign}${levelGap}`,
+      rationale: `same site ${c.site}; team ${c.team} differs from ${hire.team}; tenure ${dayDiff(c.hireDate, hire.startDate)} days; buddy load ${c.buddyLoad}; level gap ${sign}${levelGap}`,
     };
   });
 
-  scored.sort((a, b) => b.score - a.score || a.workerId.localeCompare(b.workerId));
-  const proposals = scored.slice(0, 3);
-  const seniorityCrossed = proposals.length > 0 && proposals[0].levelGap > policy.maxSeniorLevelGap;
+  const seniorityCrossed = proposals.length > 0 && Math.abs(proposals[0].levelGap) > policy.maxLevelGap;
   return { proposals, seniorityCrossed };
 }

@@ -10,7 +10,7 @@ export interface ToolContract {
     result: { workerId: string; linkedRecords: { workerId: string; workerType: string }[] };
   };
   servicenow_create_request: {
-    params: { workerId: string; roleFamily: string };
+    params: { workerId: string; roleFamily: string | null };
     result: { requestId: string };
   };
   servicenow_get_status: {
